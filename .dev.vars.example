@@ -1,0 +1,3 @@
+# Copy to `.dev.vars` (git-ignored) for `wrangler dev`.
+# Any long random string — used to sign the session cookie.
+SESSION_SECRET="change-me-to-a-long-random-string"

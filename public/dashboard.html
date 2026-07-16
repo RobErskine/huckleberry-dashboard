@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Huckleberry Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">🫐 <span id="child-name">Baby</span></div>
+      <div class="topbar-right">
+        <select id="child-select" hidden></select>
+        <span id="updated" class="muted small"></span>
+        <button id="logout" class="link">Sign out</button>
+      </div>
+    </header>
+
+    <main class="grid" id="cards">
+      <section class="card stat" id="card-feed">
+        <h2>🍼 Last fed</h2>
+        <div class="big" data-field="feed-ago">—</div>
+        <div class="muted" data-field="feed-detail"></div>
+      </section>
+
+      <section class="card stat" id="card-sleep">
+        <h2>💤 Last nap</h2>
+        <div class="big" data-field="sleep-ago">—</div>
+        <div class="muted" data-field="sleep-detail"></div>
+      </section>
+
+      <section class="card stat" id="card-diaper">
+        <h2>🧷 Last diaper</h2>
+        <div class="big" data-field="diaper-ago">—</div>
+        <div class="muted" data-field="diaper-detail"></div>
+      </section>
+
+      <section class="card stat" id="card-pump">
+        <h2>🤱 Last pump</h2>
+        <div class="big" data-field="pump-ago">—</div>
+        <div class="muted" data-field="pump-detail"></div>
+      </section>
+    </main>
+
+    <p id="error" class="error" hidden></p>
+
+    <section class="quick-log-section">
+      <div class="quick-log-head">
+        <h2>Quick log</h2>
+        <label class="ql-dry">
+          <input type="checkbox" id="dry-run" />
+          Dry run
+        </label>
+      </div>
+
+      <div class="ql-dry-banner" role="status">
+        🧪 Dry run is on — actions are previewed only, nothing is saved.
+      </div>
+
+      <div class="quick-log-grid">
+        <section class="card ql-cat">
+          <h2>🍼 Feeding</h2>
+
+          <div class="ql-tablist" role="tablist" data-tabs="feeding">
+            <button type="button" class="ql-tab" role="tab" data-tab="bottle">🍼 Bottle</button>
+            <button type="button" class="ql-tab" role="tab" data-tab="nursing">🤱 Nursing</button>
+            <button type="button" class="ql-tab" role="tab" data-tab="solids">🥄 Solids</button>
+          </div>
+
+          <div class="ql-tabpanel" data-panel="bottle">
+            <form class="ql-row" data-log-form="bottle">
+              <input name="amount" type="number" min="1" step="1" placeholder="Amount" required />
+              <select name="units" aria-label="Bottle units">
+                <option value="ml">ml</option>
+                <option value="oz">oz</option>
+              </select>
+              <select name="bottleType" aria-label="Bottle type">
+                <option value="Formula">Formula</option>
+                <option value="Breast Milk">Breast milk</option>
+                <option value="Cow Milk">Cow milk</option>
+                <option value="Goat Milk">Goat milk</option>
+                <option value="Soy Milk">Soy milk</option>
+                <option value="Tube Feeding">Tube feeding</option>
+                <option value="Other">Other</option>
+              </select>
+              <button type="submit" class="ql-btn">Log</button>
+            </form>
+          </div>
+
+          <div class="ql-tabpanel" data-panel="nursing">
+            <form class="ql-row" data-log-form="nursing">
+              <input name="durationMin" type="number" min="1" step="1" placeholder="Minutes" required />
+              <select name="side" aria-label="Nursing side">
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+              </select>
+              <button type="submit" class="ql-btn">Log</button>
+            </form>
+          </div>
+
+          <div class="ql-tabpanel" data-panel="solids">
+            <form class="ql-row" data-log-form="solids">
+              <select name="food" id="food-select" aria-label="Food">
+                <option value="">Loading foods…</option>
+              </select>
+              <select name="reaction" aria-label="Reaction">
+                <option value="">Reaction…</option>
+                <option value="LOVED">Loved</option>
+                <option value="MEH">Meh</option>
+                <option value="HATED">Hated</option>
+                <option value="ALLERGIC">Allergic</option>
+              </select>
+              <button type="submit" class="ql-btn">Log</button>
+            </form>
+          </div>
+        </section>
+
+        <section class="card ql-cat">
+          <h2>🧷 Diapers</h2>
+
+          <div class="ql-row">
+            <span class="ql-label">Diaper</span>
+            <button class="ql-btn" data-log-diaper="pee">Pee</button>
+            <button class="ql-btn" data-log-diaper="poo">Poo</button>
+            <button class="ql-btn" data-log-diaper="both">Both</button>
+            <button class="ql-btn" data-log-diaper="dry">Dry</button>
+          </div>
+
+          <div class="ql-row">
+            <span class="ql-label">Potty</span>
+            <button class="ql-btn" data-log-potty="wentPotty">Went</button>
+            <button class="ql-btn" data-log-potty="satButDry">Dry sit</button>
+            <button class="ql-btn" data-log-potty="accident">Accident</button>
+          </div>
+        </section>
+
+        <section class="card ql-cat">
+          <h2>💤 Sleep</h2>
+          <form class="ql-row" data-log-form="sleep">
+            <input name="durationMin" type="number" min="1" step="1" placeholder="Minutes" required />
+            <button type="submit" class="ql-btn">Log</button>
+          </form>
+        </section>
+
+        <section class="card ql-cat">
+          <h2>🤱 Pumping</h2>
+          <form class="ql-row" data-log-form="pump">
+            <input name="totalAmount" type="number" min="1" step="1" placeholder="Total amount" required />
+            <select name="units" aria-label="Pump units">
+              <option value="ml">ml</option>
+              <option value="oz">oz</option>
+            </select>
+            <button type="submit" class="ql-btn">Log</button>
+          </form>
+        </section>
+
+        <section class="card ql-cat">
+          <h2>📈 Growth</h2>
+          <form class="ql-row" data-log-form="growth">
+            <input name="weight" type="number" step="any" min="0" placeholder="Weight" />
+            <input name="height" type="number" step="any" min="0" placeholder="Height" />
+            <input name="head" type="number" step="any" min="0" placeholder="Head" />
+            <select name="units" aria-label="Growth units">
+              <option value="metric">metric</option>
+              <option value="imperial">imperial</option>
+            </select>
+            <button type="submit" class="ql-btn">Log</button>
+          </form>
+        </section>
+
+        <section class="card ql-cat">
+          <h2>🤸 Activity</h2>
+          <form class="ql-row" data-log-form="activity">
+            <select name="mode" aria-label="Activity type">
+              <option value="tummyTime">Tummy time</option>
+              <option value="bath">Bath</option>
+              <option value="storyTime">Story time</option>
+              <option value="screenTime">Screen time</option>
+              <option value="skinToSkin">Skin to skin</option>
+              <option value="outdoorPlay">Outdoor play</option>
+              <option value="indoorPlay">Indoor play</option>
+              <option value="brushTeeth">Brush teeth</option>
+            </select>
+            <input name="durationMin" type="number" min="1" step="1" placeholder="Minutes (opt)" />
+            <button type="submit" class="ql-btn">Log</button>
+          </form>
+        </section>
+      </div>
+
+      <p id="ql-status" class="small" hidden></p>
+      <pre id="ql-plan" class="ql-plan" hidden></pre>
+    </section>
+
+    <section class="card access-panel">
+      <details>
+        <summary>🔑 Application access codes</summary>
+        <p class="muted small">
+          Revocable access codes that let external apps read this child's data.
+          Use them with the <code>/api/latest</code> polling endpoint (home displays, TRMNL plugin)
+          or the <code>/mcp</code> server (AI chat clients like Claude).
+          Pass as an <code>Authorization: Bearer &lt;code&gt;</code> header or
+          <code>?token=&lt;code&gt;</code> query param. The code is shown once — copy it now.
+        </p>
+        <button id="gen-token" class="link">Generate access code</button>
+        <div id="token-out" hidden>
+          <label class="small">Worker base URL
+            <input id="tok-base" readonly />
+          </label>
+          <label class="small">Access code
+            <input id="tok-value" readonly />
+          </label>
+          <label class="small">Child id (cid)
+            <input id="tok-cid" readonly />
+          </label>
+        </div>
+        <div id="token-list" class="small muted"></div>
+      </details>
+    </section>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Huckleberry Dashboard — Sign in</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="login-body">
+    <main class="card login-card">
+      <h1>🫐 Huckleberry Dashboard</h1>
+      <p class="muted">Sign in with your Huckleberry account.</p>
+      <p class="muted small">A self-hosted dashboard that shows your baby's latest activity — feeds, sleep, diapers, and more — on any home display. Includes a polling API and MCP server for connecting other apps and AI clients.</p>
+      <form id="login-form">
+        <label>
+          Email
+          <input type="email" name="email" autocomplete="username" required />
+        </label>
+        <label>
+          Password
+          <input
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            required
+          />
+        </label>
+        <button type="submit" id="submit">Sign in</button>
+        <p id="error" class="error" hidden></p>
+      </form>
+    </main>
+    <footer class="login-footer">
+      <p class="muted small">Not affiliated with, endorsed by, or connected to Huckleberry Labs, Inc. This is an independent open-source project that uses your own Huckleberry account.</p>
+    </footer>
+    <script>
+      const form = document.getElementById("login-form");
+      const errorEl = document.getElementById("error");
+      const submit = document.getElementById("submit");
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        errorEl.hidden = true;
+        submit.disabled = true;
+        submit.textContent = "Signing in…";
+        const data = Object.fromEntries(new FormData(form));
+        try {
+          const res = await fetch("/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          });
+          const text = await res.text();
+          let json;
+          try {
+            json = JSON.parse(text);
+          } catch {
+            throw new Error(
+              `Server error (${res.status}): ${text.slice(0, 200)}`,
+            );
+          }
+          if (!res.ok) throw new Error(json.error || "Sign-in failed");
+          window.location.href = "/";
+        } catch (err) {
+          errorEl.textContent = err.message;
+          errorEl.hidden = false;
+          submit.disabled = false;
+          submit.textContent = "Sign in";
+        }
+      });
+    </script>
+  </body>
+</html>

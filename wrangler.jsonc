@@ -1,0 +1,48 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "huckleberry-dashboard",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-09-23",
+  // Required by the MCP SDK (@modelcontextprotocol/sdk) used by the /mcp server.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  // Gates the MCP server's write tools (log_*). Set to "1" to register + allow
+  // them; set to "0" for a read-only MCP endpoint. The cookie-authenticated
+  // dashboard /api/log/* routes are NOT gated by this.
+  "vars": {
+    "ENABLE_WRITES": "1"
+  },
+  // Durable Object backing the MCP server (Streamable HTTP at /mcp).
+  "durable_objects": {
+    "bindings": [{ "name": "MCP_OBJECT", "class_name": "HuckleberryMCP" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HuckleberryMCP"] }],
+  // Static assets (login + dashboard pages, css, js). Asset paths like
+  // /app.js and /styles.css are served directly; the Worker handles routes
+  // (/, /login, /api/*) so it can gate the dashboard behind a session.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  // Session store. Create with:
+  //   wrangler kv namespace create SESSIONS
+  // then paste the returned id below (and a preview_id for `wrangler dev`).
+  "kv_namespaces": [
+    {
+      "binding": "SESSIONS",
+      "id": "3ffb22dd7d4d4c42991ecb17c6c143dc",
+      "preview_id": "5514220fa30b45f8bfe3b4ec54cc9251"
+    }
+  ],
+  // 5-minute cron: push a fresh payload to the TRMNL webhook so the device
+  // data is ≤5 min old (matching the device's refresh rate) instead of ≤15 min.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  }
+  // Secrets (not committed) — set with wrangler secret put:
+  //   SESSION_SECRET      cookie signing key
+  //   TRMNL_TOKEN         the API token from the dashboard token panel
+  //   TRMNL_WEBHOOK_URL   https://trmnl.com/api/custom_plugins/<plugin-uuid>
+}

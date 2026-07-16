@@ -1,0 +1,345 @@
+:root {
+  --bg: #0f1226;
+  --card: #1a1f3a;
+  --accent: #8a7cff;
+  --text: #f3f4ff;
+  --muted: #9aa0c7;
+  --error: #ff8095;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: 0.8rem;
+}
+.error {
+  color: var(--error);
+  text-align: center;
+  margin: 1rem;
+}
+
+/* --- login --- */
+.login-body {
+  display: grid;
+  place-items: center;
+}
+.card {
+  background: var(--card);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.login-card {
+  width: min(92vw, 380px);
+  margin-top: 12vh;
+}
+.login-footer {
+  width: min(92vw, 380px);
+  text-align: center;
+  padding-bottom: 2rem;
+}
+.login-card h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.4rem;
+}
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+input {
+  padding: 0.7rem;
+  border-radius: 10px;
+  border: 1px solid #2c335c;
+  background: #0d1024;
+  color: var(--text);
+  font-size: 1rem;
+}
+button {
+  padding: 0.8rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.link {
+  background: none;
+  color: var(--muted);
+  padding: 0.3rem 0.5rem;
+  font-weight: 500;
+}
+
+/* --- dashboard --- */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+}
+.brand {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+#child-select {
+  padding: 0.4rem;
+  border-radius: 8px;
+  background: #0d1024;
+  color: var(--text);
+  border: 1px solid #2c335c;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  padding: 0 1.25rem 2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.stat h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.big {
+  font-size: clamp(2rem, 6vw, 3.2rem);
+  font-weight: 800;
+  line-height: 1.1;
+}
+.stat .muted {
+  margin-top: 0.4rem;
+  font-size: 0.95rem;
+}
+
+/* --- quick log --- */
+.quick-log-section {
+  max-width: 1100px;
+  margin: 0 auto 2rem;
+  padding: 0 1.25rem;
+}
+.quick-log-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+.quick-log-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+/* dry-run toggle — prominent pill that lights up amber when enabled */
+.ql-dry {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid #2c335c;
+  border-radius: 999px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.ql-dry input {
+  width: auto;
+  accent-color: #f0b429;
+}
+.ql-dry:has(input:checked) {
+  background: #f0b429;
+  border-color: #f0b429;
+  color: #1a1206;
+}
+
+/* banner shown only while dry run is on */
+.ql-dry-banner {
+  display: none;
+  margin-bottom: 1rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 10px;
+  background: rgba(240, 180, 41, 0.12);
+  border: 1px solid rgba(240, 180, 41, 0.5);
+  color: #f0b429;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.quick-log-section:has(#dry-run:checked) .ql-dry-banner {
+  display: block;
+}
+
+/* grid of category cards — mirrors the stat-card grid */
+.quick-log-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.ql-cat h2 {
+  margin: 0 0 0.9rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.ql-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+.ql-cat .ql-row + .ql-row {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #2c335c;
+}
+.ql-label {
+  flex-basis: 100%;
+  min-width: 0;
+  margin-bottom: 0.15rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.ql-btn {
+  width: auto;
+  padding: 0.5rem 0.95rem;
+  font-size: 0.95rem;
+}
+/* Text/number inputs grow to fill the row; selects keep natural width and sit
+   inline next to them. Submit buttons are pushed to the right edge. */
+.ql-row input[type="number"],
+.ql-row input[type="text"] {
+  flex: 1 1 6rem;
+  min-width: 0;
+}
+.ql-row select {
+  flex: 0 0 auto;
+  padding: 0.5rem;
+  border-radius: 10px;
+  border: 1px solid #2c335c;
+  background: #0d1024;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+.ql-row button[type="submit"] {
+  margin-left: auto;
+}
+
+/* Feeding tabs (segmented control) */
+.ql-tablist {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  padding: 0.25rem;
+  background: #0d1024;
+  border: 1px solid #2c335c;
+  border-radius: 10px;
+}
+.ql-tab {
+  flex: 1;
+  padding: 0.45rem 0.4rem;
+  background: none;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 8px;
+}
+.ql-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+.ql-tabpanel {
+  display: none;
+}
+.ql-tabpanel.active {
+  display: block;
+}
+#ql-status {
+  margin: 0.9rem 0 0;
+}
+#ql-status.ok {
+  color: #7ee0a8;
+}
+#ql-status.bad {
+  color: var(--error);
+}
+.ql-plan {
+  margin: 0.6rem 0 0;
+  padding: 0.75rem;
+  max-height: 220px;
+  overflow: auto;
+  background: #0d1024;
+  border: 1px solid #2c335c;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* --- access code panel --- */
+.access-panel {
+  max-width: 1100px;
+  margin: 0 auto 2rem;
+}
+.access-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.access-panel input[readonly] {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+.access-panel label {
+  margin-top: 0.6rem;
+}
+#token-list {
+  margin-top: 0.8rem;
+}
