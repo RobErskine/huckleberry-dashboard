@@ -146,6 +146,55 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
       c.listActivityIntervals(cid, s, e),
     );
 
+    // --- prompts -----------------------------------------------------------
+    //
+    // Registering at least one prompt makes the MCP SDK advertise the `prompts`
+    // capability and answer `prompts/list`. Some clients (e.g. the Pebble Index
+    // voice ring) require that capability during discovery and refuse to connect
+    // without it. These are read-only conversation starters that lean on the
+    // tools above, so they're registered regardless of ENABLE_WRITES.
+    this.server.registerPrompt(
+      "daily_briefing",
+      {
+        title: "Daily briefing",
+        description:
+          "A heads-up rollup of the child's day so far: last feed, last sleep/nap, last diaper, last pump, latest weight, and any running timers.",
+      },
+      () => ({
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: "Give me a concise briefing on my baby's day so far — last feed, last sleep/nap, last diaper, last pump, latest weight, and any timers currently running. Start with get_dashboard_summary, and use the list_* tools only if you need more detail.",
+            },
+          },
+        ],
+      }),
+    );
+
+    this.server.registerPrompt(
+      "recent_activity",
+      {
+        title: "Recent activity",
+        description: "Summarize the child's feeds, sleep, and diapers over a recent time window.",
+        argsSchema: {
+          hours: z.string().optional().describe("How many hours back to review (default 24)."),
+        },
+      },
+      ({ hours }) => ({
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Summarize my baby's feeds, sleep, and diapers over the last ${hours ?? "24"} hours using the list_* tools, and call out anything that looks unusual.`,
+            },
+          },
+        ],
+      }),
+    );
+
     // --- write tools (gated by ENABLE_WRITES) ------------------------------
     //
     // Only registered when the server is configured to allow writes. Mirrors the

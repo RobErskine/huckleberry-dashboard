@@ -806,6 +806,54 @@ function bearerToken(request: Request): string {
   return new URL(request.url).searchParams.get("token") ?? "";
 }
 
+// The Cloudflare `agents` SDK always answers a Streamable-HTTP POST with an
+// SSE-framed body (`Content-Type: text/event-stream`), never plain JSON. The
+// MCP spec permits either, and some minimal clients (e.g. the Pebble Index
+// hardware ring) only understand the JSON form and hang on the SSE stream.
+// `jsonifyMcpResponse` transparently converts the single request→response frame
+// back to `application/json`. This is spec-valid and invisible to compliant
+// clients, which advertise (and accept) both content types.
+
+/** Force both accept types so the SDK doesn't 406 a client that only sends one. */
+function withStreamAccept(headers: Headers): Headers {
+  const h = new Headers(headers);
+  h.set("accept", "application/json, text/event-stream");
+  return h;
+}
+
+/** If the response is an SSE stream, unwrap its `data:` frame(s) into JSON. */
+async function jsonifyMcpResponse(res: Response): Promise<Response> {
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("text/event-stream")) return res; // JSON / 202 / errors: pass through
+
+  const text = await res.text();
+  const messages: unknown[] = [];
+  for (const block of text.split("\n\n")) {
+    const data = block
+      .split("\n")
+      .filter((l) => l.startsWith("data:"))
+      .map((l) => l.slice(5).trim())
+      .join("\n");
+    if (!data) continue;
+    try {
+      messages.push(JSON.parse(data));
+    } catch {
+      /* ignore non-JSON keepalive/comment frames */
+    }
+  }
+
+  const headers = new Headers(res.headers);
+  headers.delete("content-length"); // body length changes
+  headers.delete("cache-control");
+
+  // Couldn't parse anything usable — preserve the original stream verbatim.
+  if (messages.length === 0) return new Response(text, { status: res.status, headers });
+
+  headers.set("content-type", "application/json");
+  const payload = messages.length === 1 ? messages[0] : messages;
+  return new Response(JSON.stringify(payload), { status: res.status, headers });
+}
+
 export default {
   async fetch(request: Request, env: Bindings, ctx: ExecutionContext): Promise<Response> {
     const { pathname } = new URL(request.url);
@@ -819,9 +867,33 @@ export default {
           { status: 401, headers: { "WWW-Authenticate": "Bearer" } },
         );
       }
+      // Some minimal Streamable-HTTP clients (e.g. the Pebble Index ring) open a
+      // GET /mcp server→client SSE stream and block on it as part of connecting.
+      // This server never emits server-initiated messages, so that stream would
+      // sit idle until the client's socket timeout (~60s) and the connection is
+      // reported as failed. The MCP spec permits answering GET with 405 ("no SSE
+      // stream offered here"); compliant clients (incl. Claude) then proceed with
+      // request/response over POST only. All our tools are request→response, so
+      // nothing is lost.
+      if (request.method === "GET") {
+        return Response.json(
+          {
+            jsonrpc: "2.0",
+            error: { code: -32000, message: "Method Not Allowed: no server SSE stream at this endpoint" },
+            id: null,
+          },
+          { status: 405, headers: { Allow: "POST, DELETE" } },
+        );
+      }
+
       // Hand the validated token to the agent; tools rebuild a client from it.
       (ctx as ExecutionContext & { props?: unknown }).props = { token };
-      return mcpHandler.fetch(request, env, ctx);
+      // Normalize Accept so the SDK never 406s, then return a plain-JSON body
+      // for POST request→response calls (see jsonifyMcpResponse). DELETE
+      // (session teardown) passes through untouched.
+      const upstream = new Request(request, { headers: withStreamAccept(request.headers) });
+      const res = await mcpHandler.fetch(upstream, env, ctx);
+      return request.method === "POST" ? jsonifyMcpResponse(res) : res;
     }
 
     return app.fetch(request, env, ctx);
