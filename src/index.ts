@@ -53,6 +53,7 @@ import {
 } from "./session.js";
 import { formatForTrmnl, trimForWebhook } from "./trmnl.js";
 import { HuckleberryMCP } from "./mcp.js";
+import { parseTime } from "./time.js";
 import { openapiSpec, docsHtml } from "./openapi.js";
 
 // Durable Object class for the MCP server (referenced by wrangler binding).
@@ -425,16 +426,6 @@ function num(v: unknown): number | undefined {
   if (v === null || v === undefined || v === "") return undefined;
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
-}
-
-/** Parse a time input (epoch seconds or ISO string) into epoch seconds. */
-function parseTime(v: unknown): number | undefined {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v) {
-    const ms = Date.parse(v);
-    if (!Number.isNaN(ms)) return Math.floor(ms / 1000);
-  }
-  return undefined;
 }
 
 /** Parse + validate the JSON body shared by every log endpoint. */

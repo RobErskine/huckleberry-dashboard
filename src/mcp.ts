@@ -11,13 +11,16 @@
  * Read tools are always on. Write tools (`log_*`) are gated: they're only
  * registered when the `ENABLE_WRITES` env var is truthy, mirroring the upstream
  * `huckleberry-js` MCP server's `HUCKLEBERRY_ENABLE_WRITES` flag. Every write
- * tool also accepts `dryRun` to preview the planned writes.
+ * tool also accepts `dryRun` to preview the planned writes, and an optional
+ * `start` (sleep/nursing also `end`) to backdate the entry.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { z } from "zod";
 import { clientFromToken, getToken, type StoredToken } from "./session.js";
+import { resolveRange, timeArg } from "./time.js";
+import { checkDuplicate, diaperEvents, feedEvents, sleepEvents, type DupKind } from "./dedupe.js";
 
 /** Bindings the agent needs (its own Durable Object namespace + the KV store). */
 interface Env {
@@ -37,6 +40,9 @@ type State = Record<string, never>;
 
 /** Default lookback window for the interval tools. */
 const DEFAULT_HOURS = 24;
+
+/** How far either side of a candidate event check_duplicate looks. */
+const DUP_LOOKAROUND_SEC = 12 * 3600;
 
 /** Render any value as a single text content block. */
 function json(value: unknown) {
@@ -146,6 +152,48 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
       c.listActivityIntervals(cid, s, e),
     );
 
+    const timeInput = z.union([z.number(), z.string()]);
+
+    this.server.registerTool(
+      "check_duplicate",
+      {
+        description:
+          "Before logging an event from another source, check it against existing entries. Returns verdict 'duplicate' (same type within 5 min: skip), 'possible_duplicate' (similar event within 30 min, or overlapping sleep: ask the user), or 'ok' (safe to write). Never writes.",
+        inputSchema: {
+          cid: cidArg,
+          type: z
+            .enum(["bottle", "nursing", "solids", "diaper", "potty", "sleep"])
+            .describe("Event type to check."),
+          start: timeInput.describe(
+            "When the event started: epoch seconds or ISO 8601 with a timezone offset.",
+          ),
+          end: timeInput
+            .optional()
+            .describe("When a sleep/nursing session ended (same formats as start)."),
+        },
+        annotations: { readOnlyHint: true },
+      },
+      async ({ cid, type, start, end }) => {
+        const { rec, client } = await this.resolve();
+        const childId = cid ?? rec.cid;
+        if (!childId) throw new Error("No child id (cid) available.");
+        const now = Math.floor(Date.now() / 1000);
+        const startSec = timeArg("start", start, now)!;
+        const endSec = timeArg("end", end, now);
+        const from = startSec - DUP_LOOKAROUND_SEC;
+        const to = startSec + DUP_LOOKAROUND_SEC;
+        const kind = type as DupKind;
+        const existing =
+          kind === "sleep"
+            ? sleepEvents(await client.listSleepIntervals(childId, from, to))
+            : kind === "diaper" || kind === "potty"
+              ? diaperEvents(await client.listDiaperIntervals(childId, from, to))
+              : feedEvents(await client.listFeedIntervals(childId, from, to));
+        const result = checkDuplicate({ kind, start: startSec, end: endSec }, existing);
+        return json({ cid: childId, ...result });
+      },
+    );
+
     // --- prompts -----------------------------------------------------------
     //
     // Registering at least one prompt makes the MCP SDK advertise the `prompts`
@@ -217,11 +265,17 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
       return childId;
     };
 
-    /** Convert a duration in minutes into a {start,end} epoch-seconds range ending now. */
-    const rangeFromDuration = (minutes: number): { start: number; end: number } => {
-      const end = Math.floor(Date.now() / 1000);
-      return { start: end - Math.round(minutes * 60), end };
-    };
+    const startArg = timeInput
+      .optional()
+      .describe(
+        "When it happened: epoch seconds or ISO 8601 with a timezone offset (e.g. 2026-10-19T10:15:00-04:00). Omit for now.",
+      );
+    const endArg = timeInput
+      .optional()
+      .describe("When it ended (same formats as start). Omit to end now, or with durationMinutes.");
+    const nowSec = () => Math.floor(Date.now() / 1000);
+    /** Parse an optional `start` arg into epoch seconds (undefined → now, in huckleberry-js). */
+    const startOf = (start: string | number | undefined) => timeArg("start", start, nowSec());
 
     this.server.registerTool(
       "log_diaper",
@@ -238,15 +292,16 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
             .enum(["solid", "loose", "runny", "mucousy", "hard", "pebbles", "diarrhea"])
             .optional(),
           notes: z.string().optional(),
+          start: startArg,
           dryRun: dryRunArg,
         },
         annotations: writeAnnotations,
       },
-      async ({ cid, mode, peeAmount, pooAmount, color, consistency, notes, dryRun }) => {
+      async ({ cid, mode, peeAmount, pooAmount, color, consistency, notes, start, dryRun }) => {
         const { rec, client } = await this.resolve();
         const result = await client.logDiaper(
           childOrThrow(cid, rec),
-          { mode, peeAmount, pooAmount, color, consistency, notes },
+          { mode, peeAmount, pooAmount, color, consistency, notes, start: startOf(start) },
           { dryRun: !!dryRun },
         );
         return json(result);
@@ -265,15 +320,16 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
             .enum(["satButDry", "wentPotty", "accident"])
             .describe("Outcome of the potty sit."),
           notes: z.string().optional(),
+          start: startArg,
           dryRun: dryRunArg,
         },
         annotations: writeAnnotations,
       },
-      async ({ cid, mode, howItHappened, notes, dryRun }) => {
+      async ({ cid, mode, howItHappened, notes, start, dryRun }) => {
         const { rec, client } = await this.resolve();
         const result = await client.logPotty(
           childOrThrow(cid, rec),
-          { mode, howItHappened, notes },
+          { mode, howItHappened, notes, start: startOf(start) },
           { dryRun: !!dryRun },
         );
         return json(result);
@@ -301,15 +357,16 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
             ])
             .optional()
             .describe("Contents of the bottle (default Formula)."),
+          start: startArg,
           dryRun: dryRunArg,
         },
         annotations: writeAnnotations,
       },
-      async ({ cid, amount, units, bottleType, dryRun }) => {
+      async ({ cid, amount, units, bottleType, start, dryRun }) => {
         const { rec, client } = await this.resolve();
         const result = await client.logBottle(
           childOrThrow(cid, rec),
-          { amount, units, bottleType },
+          { amount, units, bottleType, start: startOf(start) },
           { dryRun: !!dryRun },
         );
         return json(result);
@@ -320,21 +377,31 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
       "log_nursing",
       {
         description:
-          "Log a completed nursing session of the given length, ending now. Updates the last-nursing summary.",
+          "Log a completed nursing session. Pass start and end, or durationMinutes (with start or end; alone it ends now). Updates the last-nursing summary only if it is the newest entry.",
         inputSchema: {
           cid: cidArg,
-          durationMinutes: z.number().positive().describe("How long the session lasted."),
+          start: startArg,
+          end: endArg,
+          durationMinutes: z
+            .number()
+            .positive()
+            .optional()
+            .describe("How long the session lasted. Fallback when start or end is missing."),
           side: z.enum(["left", "right", "none"]).optional().describe("Side nursed (default left)."),
           dryRun: dryRunArg,
         },
         annotations: writeAnnotations,
       },
-      async ({ cid, durationMinutes, side, dryRun }) => {
+      async ({ cid, start, end, durationMinutes, side, dryRun }) => {
         const { rec, client } = await this.resolve();
-        const { start, end } = rangeFromDuration(durationMinutes);
+        const now = nowSec();
+        const range = resolveRange(
+          { start: timeArg("start", start, now), end: timeArg("end", end, now), durationMinutes },
+          now,
+        );
         const result = await client.logNursing(
           childOrThrow(cid, rec),
-          { start, end, side },
+          { ...range, side },
           { dryRun: !!dryRun },
         );
         return json(result);
@@ -345,20 +412,30 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
       "log_sleep",
       {
         description:
-          "Log a completed sleep/nap of the given length, ending now. Updates the last-sleep summary.",
+          "Log a completed sleep/nap. Pass start and end, or durationMinutes (with start or end; alone it ends now). Updates the last-sleep summary only if it is the newest entry.",
         inputSchema: {
           cid: cidArg,
-          durationMinutes: z.number().positive().describe("How long the sleep lasted."),
+          start: startArg,
+          end: endArg,
+          durationMinutes: z
+            .number()
+            .positive()
+            .optional()
+            .describe("How long the sleep lasted. Fallback when start or end is missing."),
           dryRun: dryRunArg,
         },
         annotations: writeAnnotations,
       },
-      async ({ cid, durationMinutes, dryRun }) => {
+      async ({ cid, start, end, durationMinutes, dryRun }) => {
         const { rec, client } = await this.resolve();
-        const { start, end } = rangeFromDuration(durationMinutes);
+        const now = nowSec();
+        const range = resolveRange(
+          { start: timeArg("start", start, now), end: timeArg("end", end, now), durationMinutes },
+          now,
+        );
         const result = await client.logSleep(
           childOrThrow(cid, rec),
-          { start, end },
+          range,
           { dryRun: !!dryRun },
         );
         return json(result);
@@ -434,11 +511,22 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
           units: z.enum(["ml", "oz"]).optional().describe("Volume units (default ml)."),
           durationMinutes: z.number().positive().optional(),
           notes: z.string().optional(),
+          start: startArg,
           dryRun: dryRunArg,
         },
         annotations: writeAnnotations,
       },
-      async ({ cid, totalAmount, leftAmount, rightAmount, units, durationMinutes, notes, dryRun }) => {
+      async ({
+        cid,
+        totalAmount,
+        leftAmount,
+        rightAmount,
+        units,
+        durationMinutes,
+        notes,
+        start,
+        dryRun,
+      }) => {
         const { rec, client } = await this.resolve();
         if (
           totalAmount === undefined &&
@@ -455,6 +543,7 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
             units,
             duration: durationMinutes === undefined ? undefined : Math.round(durationMinutes * 60),
             notes,
+            start: startOf(start),
           },
           { dryRun: !!dryRun },
         );
@@ -473,18 +562,19 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
           height: z.number().positive().optional(),
           head: z.number().positive().optional(),
           units: z.enum(["metric", "imperial"]).optional().describe("Unit system (default metric)."),
+          start: startArg,
           dryRun: dryRunArg,
         },
         annotations: writeAnnotations,
       },
-      async ({ cid, weight, height, head, units, dryRun }) => {
+      async ({ cid, weight, height, head, units, start, dryRun }) => {
         const { rec, client } = await this.resolve();
         if (weight === undefined && height === undefined && head === undefined) {
           throw new Error("At least one of weight, height, or head is required.");
         }
         const result = await client.logGrowth(
           childOrThrow(cid, rec),
-          { weight, height, head, units },
+          { weight, height, head, units, start: startOf(start) },
           { dryRun: !!dryRun },
         );
         return json(result);
@@ -512,11 +602,12 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
             .describe("Activity type."),
           durationMinutes: z.number().positive().optional(),
           notes: z.string().optional(),
+          start: startArg,
           dryRun: dryRunArg,
         },
         annotations: writeAnnotations,
       },
-      async ({ cid, mode, durationMinutes, notes, dryRun }) => {
+      async ({ cid, mode, durationMinutes, notes, start, dryRun }) => {
         const { rec, client } = await this.resolve();
         const result = await client.logActivity(
           childOrThrow(cid, rec),
@@ -524,6 +615,7 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
             mode,
             duration: durationMinutes === undefined ? undefined : Math.round(durationMinutes * 60),
             notes,
+            start: startOf(start),
           },
           { dryRun: !!dryRun },
         );
@@ -573,15 +665,16 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
             .describe("Foods eaten, from list_foods."),
           reaction: z.enum(["LOVED", "MEH", "HATED", "ALLERGIC"]).optional(),
           notes: z.string().optional(),
+          start: startArg,
           dryRun: dryRunArg,
         },
         annotations: writeAnnotations,
       },
-      async ({ cid, foods, reaction, notes, dryRun }) => {
+      async ({ cid, foods, reaction, notes, start, dryRun }) => {
         const { rec, client } = await this.resolve();
         const result = await client.logSolids(
           childOrThrow(cid, rec),
-          { foods, reaction, notes },
+          { foods, reaction, notes, start: startOf(start) },
           { dryRun: !!dryRun },
         );
         return json(result);
