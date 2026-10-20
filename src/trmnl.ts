@@ -15,6 +15,8 @@ import type {
   FirebaseDiaperData,
   FirebasePumpIntervalData,
   FirebaseActivityIntervalData,
+  FirebaseSleepDocumentData,
+  FirebaseChildDocument,
 } from "huckleberry-js";
 
 export interface TrmnlCard {
@@ -33,6 +35,8 @@ export interface TrmnlCard {
   sub: string;
   /** Optional parent note attached to the event — empty when none. */
   note: string;
+  /** Next sleep "SweetSpot" clock, e.g. "3:00 PM" — empty when none. */
+  sweetSpot: string;
   /** epoch seconds of the event (0 if absent) */
   ts: number;
 }
@@ -85,9 +89,9 @@ export interface TrmnlPayload {
   cards: TrmnlCard[];
   /**
    * Cards for the full view's left column, in display order:
-   * last bottle feed, last breast feed, last diaper change. Split out from
-   * `cards` (which keeps the single combined "Fed" metric) so the home display
-   * can show feeds by type without affecting the quadrant/half layouts.
+   * last bottle feed, sleep (asleep now / last nap), last poo, last pee. Split
+   * out from `cards` so the home display can show these without affecting the
+   * quadrant/half layouts.
    */
   leftCards: TrmnlCard[];
   timeline: TrmnlTimeline;
@@ -147,6 +151,8 @@ interface CardInput {
   detail?: string;
   /** Optional free-text parent note attached to the event. */
   note?: string | null;
+  /** Next sleep "SweetSpot" clock, e.g. "3:00 PM". */
+  sweetSpot?: string;
 }
 
 function makeCard(input: CardInput, tz: string, nowMs: number): TrmnlCard {
@@ -180,6 +186,7 @@ function makeCard(input: CardInput, tz: string, nowMs: number): TrmnlCard {
     detail,
     sub,
     note,
+    sweetSpot: input.sweetSpot ?? "",
     ts,
   };
 }
@@ -254,6 +261,25 @@ function noteForFeed(
       : undefined;
   const chosen = exact ?? [...ofMode].sort((a, b) => b.start - a.start)[0];
   return (chosen?.notes ?? "").trim();
+}
+
+/** `childs/{cid}.sweetspot` — read from the raw child doc (huckleberry-js
+ *  doesn't type it). `sweetSpotTimes` is keyed by nap-day count ("4", "5"…);
+ *  `selectedNapDay` picks the active one. Values are epoch seconds. */
+interface ChildSweetSpot {
+  selectedNapDay?: number | null;
+  sweetSpotTimes?: Record<string, number | null> | null;
+}
+
+/** Clock of the next SweetSpot (ideal nap start), or "" if none or already past. */
+function nextSweetSpot(
+  child: FirebaseChildDocument | null | undefined,
+  tz: string,
+  nowMs: number,
+): string {
+  const ss = (child as { sweetspot?: ChildSweetSpot | null } | null | undefined)?.sweetspot;
+  const t = ss?.sweetSpotTimes?.[String(ss.selectedNapDay)];
+  return t && t > nowMs / 1000 ? clockText(t, tz) : "";
 }
 
 /** Detail line for a diaper card: size, plus "Mixed" when it's a both event. */
@@ -392,6 +418,8 @@ export function trimForWebhook(payload: TrmnlPayload, limitBytes = 4900): object
       note: c.note,
     };
     if (c.inProgress) out.inProgress = true;
+    // Optional: the view tests `{% if c.sweetSpot %}` (absent = nil = falsy).
+    if (c.sweetSpot) out.sweetSpot = c.sweetSpot;
     return out;
   }
 
@@ -439,12 +467,57 @@ export function trimForWebhook(payload: TrmnlPayload, limitBytes = 4900): object
   return result;
 }
 
+/**
+ * Full-view sleep card. While asleep: how long so far ("1h 20m", since the
+ * live timer started). While awake: time since the last nap *ended* (awake
+ * time), how long it lasted, and the next SweetSpot if it's still ahead.
+ */
+function sleepCard(
+  summary: DashboardSummary,
+  sleep: FirebaseSleepDocumentData | null | undefined,
+  child: FirebaseChildDocument | null | undefined,
+  tz: string,
+  nowMs: number,
+): TrmnlCard {
+  if (summary.sleepInProgress) {
+    // Sleep timers store `timerStartTime` in milliseconds.
+    const startMs = sleep?.timer?.timerStartTime ?? 0;
+    const since = Math.floor(startMs / 1000);
+    const card = makeCard(
+      { key: "sleep", emoji: "💤", label: "Asleep", ts: since, inProgress: true, progressWord: "Sleeping" },
+      tz,
+      nowMs,
+    );
+    if (since) {
+      card.ago = durationText(Math.max(60, nowMs / 1000 - since));
+      card.sub = `since ${card.at}`;
+    }
+    return card;
+  }
+
+  const s = summary.lastSleep;
+  return makeCard(
+    {
+      key: "sleep",
+      emoji: "💤",
+      label: "Last nap",
+      ts: s ? Math.round(s.start + (s.duration ?? 0)) : undefined,
+      detail: s && durationText(s.duration) ? `slept ${durationText(s.duration)}` : "",
+      sweetSpot: nextSweetSpot(child, tz, nowMs),
+    },
+    tz,
+    nowMs,
+  );
+}
+
 export function formatForTrmnl(
   summary: DashboardSummary,
   tz: string,
   nowMs: number,
   sources?: TimelineSources,
   feed?: FirebaseFeedDocumentData | null,
+  sleep?: FirebaseSleepDocumentData | null,
+  child?: FirebaseChildDocument | null,
 ): TrmnlPayload {
   const f = summary.lastFeed;
   const s = summary.lastSleep;
@@ -518,13 +591,12 @@ export function formatForTrmnl(
     );
   }
 
-  // Left column of the full view: feeds split by type (bottle vs breast) +
-  // the two latest diaper changes (poopy vs pee). Feeds come from the feed
-  // tracker's prefs so each is the *last* of its kind; the diapers come from the
-  // diaper history so we can find the last poopy change even if it's older than
-  // the timeline window.
+  // Left column of the full view: last bottle, sleep, and the two latest
+  // diaper changes (poopy vs pee). The bottle comes from the feed tracker's
+  // prefs so it's the *last* of its kind; the diapers come from the diaper
+  // history so we can find the last poopy change even if it's older than the
+  // timeline window.
   const bottle = feed?.prefs?.lastBottle;
-  const nursing = feed?.prefs?.lastNursing;
   const { poo, pee } = pickLatestDiapers(sources?.diapers ?? []);
   const feeds = sources?.feeds ?? [];
   const leftCards: TrmnlCard[] = [
@@ -543,20 +615,7 @@ export function formatForTrmnl(
       tz,
       nowMs,
     ),
-    makeCard(
-      {
-        key: "fed-breast",
-        emoji: "🤱",
-        label: "Breast",
-        ts: nursing?.start ?? undefined,
-        detail: durationText(
-          (nursing?.leftDuration ?? 0) + (nursing?.rightDuration ?? 0),
-        ),
-        note: noteForFeed(feeds, "breast", nursing?.start),
-      },
-      tz,
-      nowMs,
-    ),
+    sleepCard(summary, sleep, child, tz, nowMs),
     makeCard(
       {
         key: "diaper-poo",

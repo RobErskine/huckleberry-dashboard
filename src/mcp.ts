@@ -365,6 +365,62 @@ export class HuckleberryMCP extends McpAgent<Env, State, Props> {
       },
     );
 
+    // --- sleep timer (live nap, same as the app's start/stop button) ---------
+
+    this.server.registerTool(
+      "start_sleep",
+      {
+        description:
+          "Start a live sleep/nap timer now, same as tapping start in the app. Fails if a timer is already running. Use complete_sleep to stop and save it.",
+        inputSchema: { cid: cidArg, dryRun: dryRunArg },
+        annotations: writeAnnotations,
+      },
+      async ({ cid, dryRun }) => {
+        const { rec, client } = await this.resolve();
+        const childId = childOrThrow(cid, rec);
+        // huckleberry-js always starts a fresh session, so a repeated "start nap"
+        // would silently reset the start time. Refuse instead.
+        const current = await client.getSleep(childId);
+        if (current?.timer?.active) {
+          throw new Error(
+            "A sleep timer is already running. Use complete_sleep to stop and save it, or cancel_sleep to discard it.",
+          );
+        }
+        const result = await client.startSleep(childId, undefined, { dryRun: !!dryRun });
+        return json(result);
+      },
+    );
+
+    this.server.registerTool(
+      "complete_sleep",
+      {
+        description:
+          "Stop the running sleep/nap timer and save it as a sleep entry. Updates the last-sleep summary. Fails if no timer is running.",
+        inputSchema: { cid: cidArg, dryRun: dryRunArg },
+        annotations: writeAnnotations,
+      },
+      async ({ cid, dryRun }) => {
+        const { rec, client } = await this.resolve();
+        const result = await client.completeSleep(childOrThrow(cid, rec), { dryRun: !!dryRun });
+        return json(result);
+      },
+    );
+
+    this.server.registerTool(
+      "cancel_sleep",
+      {
+        description:
+          "Discard the running sleep/nap timer without saving a sleep entry. Use complete_sleep instead to keep the nap.",
+        inputSchema: { cid: cidArg, dryRun: dryRunArg },
+        annotations: { readOnlyHint: false, destructiveHint: true },
+      },
+      async ({ cid, dryRun }) => {
+        const { rec, client } = await this.resolve();
+        const result = await client.cancelSleep(childOrThrow(cid, rec), { dryRun: !!dryRun });
+        return json(result);
+      },
+    );
+
     this.server.registerTool(
       "log_pump",
       {

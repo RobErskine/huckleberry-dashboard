@@ -146,7 +146,7 @@ Connect a client to `https://huckleberry-dashboard.<you>.workers.dev/mcp`:
 
 **Read tools** (always on): `get_dashboard_summary`, `list_children`, `list_sleep`, `list_feeds`, `list_diapers`, `list_pumps`, `list_activities`.
 
-**Write tools** are gated by `vars.ENABLE_WRITES` in `wrangler.jsonc` (default `"1"` = enabled): `log_diaper`, `log_potty`, `log_bottle`, `log_nursing`, `log_sleep`, `log_pump`, `log_growth`, `log_activity`, `log_solids`, `list_foods`. Set to `"0"` and redeploy for a read-only MCP endpoint. Every write tool accepts `dryRun: true`. This flag does **not** affect the cookie-authenticated `POST /api/log/*` routes, which are always available behind the login.
+**Write tools** are gated by `vars.ENABLE_WRITES` in `wrangler.jsonc` (default `"1"` = enabled): `log_diaper`, `log_potty`, `log_bottle`, `log_nursing`, `log_sleep`, `start_sleep`, `complete_sleep`, `cancel_sleep`, `log_pump`, `log_growth`, `log_activity`, `log_solids`, `list_foods`. Set to `"0"` and redeploy for a read-only MCP endpoint. Every write tool accepts `dryRun: true`. This flag does **not** affect the cookie-authenticated `POST /api/log/*` routes, which are always available behind the login.
 
 ## Testing
 

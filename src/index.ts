@@ -131,16 +131,26 @@ async function buildTrmnlPayload(
   const since = new Date(nowMs - 6 * 60 * 60 * 1000);
   const until = new Date(nowMs);
   const wideSince = new Date(nowMs - 7 * 24 * 60 * 60 * 1000);
-  const [summary, feed, feeds, sleeps, diapers, pumps, activities] = await Promise.all([
+  const [summary, feed, sleep, child, feeds, sleeps, diapers, pumps, activities] = await Promise.all([
     client.getDashboardSummary(cid, rec.childName ?? null),
     client.getFeed(cid),
+    client.getSleep(cid),
+    client.getChild(cid),
     client.listFeedIntervals(cid, wideSince, until),
     client.listSleepIntervals(cid, since, until),
     client.listDiaperIntervals(cid, wideSince, until),
     client.listPumpIntervals(cid, since, until),
     client.listActivityIntervals(cid, since, until),
   ]);
-  return formatForTrmnl(summary, tz, nowMs, { feeds, sleeps, diapers, pumps, activities }, feed);
+  return formatForTrmnl(
+    summary,
+    tz,
+    nowMs,
+    { feeds, sleeps, diapers, pumps, activities },
+    feed,
+    sleep,
+    child,
+  );
 }
 
 function serveAsset(env: Bindings, req: Request, path: string): Promise<Response> {
